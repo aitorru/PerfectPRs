@@ -1,59 +1,33 @@
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria, StoppingCriteriaList
+from llama_cpp import Llama
 
-# Cargar el tokenizador y el modelo
-tokenizer = AutoTokenizer.from_pretrained("./modelo_phi3")
-model = AutoModelForCausalLM.from_pretrained("./modelo_phi3/")
-model.to("cpu")
 
-# Mensaje de entrada
-messages = """
-The project is in C#. Aitor is an expert in python, rust and nodejs. Should he review a PR about C#? Answer with 'yes' or 'no'.
-"""
+llm = Llama(
+  model_path="./phi3-gguf/Phi-3-mini-4k-instruct-fp16.gguf",  # path to GGUF file
+  n_ctx=100,  # The max sequence length to use - note that longer sequence lengths require much more resources
+  n_threads=12, # The number of CPU threads to use, tailor to your system and the resulting performance
+  n_gpu_layers=50, # The number of layers to offload to GPU, if you have GPU acceleration available. Set to 0 if no GPU acceleration is available on your system.
+)
 
-# Tokenizar la entrada y generar el attention mask
-inputs = tokenizer(messages, return_tensors="pt", padding=True, truncation=True)
-attention_mask = inputs['attention_mask']
+LANGS = ["Python", "Rust", "Node.js", "C#", "Java", "C++", "C", "Go", "Ruby", "PHP", "Swift", "Kotlin", "TypeScript", "JavaScript", "HTML", "CSS", "SQL", "Shell", "PowerShell", "Objective-C", "Perl", "Scala", "Groovy", "Lua", "Dart", "Haskell", "Elixir", "Clojure", "Julia", "R", "Vim script", "Assembly", "Racket", "Erlang", "Crystal", "D", "Nim", "F#", "COBOL", "Pascal", "Dockerfile", "Makefile", "TeX", "VimL", "Emacs Lisp", "XSLT", "Roff", "Action"]
 
-class StopOnYesNo(StoppingCriteria):
-    def __init__(self, tokenizer, start_length):
-        self.tokenizer = tokenizer
-        self.start_length = start_length
-    
-    def __call__(self, input_ids, scores, **kwargs):
-        generated_text = self.tokenizer.decode(input_ids[0][self.start_length:], skip_special_tokens=True)
-        if "yes" in generated_text.lower() or "no" in generated_text.lower():
-            return True
-        return False
+for lang in LANGS:
+  prompt = f"The project is in {lang}. Aitor is an expert exclusively in Python, Rust, and Node.js. Should he review a PR about {lang}? Answer only with 'yes' or 'no'. If he should not review it, answer 'no'."
+  output = llm(
+    f"<|user|>\n{prompt}<|end|>\n<|assistant|>",
+    max_tokens=5,  # Generate up to 256 tokens
+    stop=["<|end|>"], 
+    echo=False,  # Whether to echo the prompt
+  )
+  print(output['choices'][0]['text'])
 
-# Definir los criterios de parada
-stop_criteria = StopOnYesNo(tokenizer, inputs.input_ids.shape[1])
-stopping_criteria = StoppingCriteriaList([stop_criteria])
+# prompt = "The project is in C#. Aitor is an expert exclusively in Python, Rust, and Node.js. Should he review a PR about C#? Answer only with 'yes' or 'no'. If he should not review it, answer 'no'."
 
-# Generar texto con parámetros controlados
-with torch.no_grad():
-    outputs = model.generate(
-        inputs.input_ids,
-        max_length=50,  # Limitar la longitud de la respuesta
-        num_return_sequences=1,  # Número de secuencias a devolver
-        top_k=50,  # Limitar el número de tokens considerados durante la generación
-        top_p=0.95,  # Probabilidad acumulada de los tokens considerados
-        no_repeat_ngram_size=2,  # Evitar repeticiones de n-gramas
-        early_stopping=True,  # Detener la generación temprano si se alcanza un token de finalización
-        do_sample=True,  # Muestrear de la distribución de probabilidad de los tokens
-        num_beams=2,  # Número de secuencias a considerar en cada paso
-        attention_mask=inputs.attention_mask,
-        stopping_criteria=stopping_criteria  # Criterios de parada personalizados
-    )
+# # Simple inference example
+# output = llm(
+#   f"<|user|>\n{prompt}<|end|>\n<|assistant|>",
+#   max_tokens=5,  # Generate up to 256 tokens
+#   stop=["<|end|>"], 
+#   echo=False,  # Whether to echo the prompt
+# )
 
-# Decodificar la respuesta
-response_text = tokenizer.decode(outputs[0], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-# Filtrar y formatear la respuesta para solo devolver 'yes' o 'no'
-if "yes" in response_text.split("### Answer:")[1].lower():
-    response = "yes"
-elif "no" in response_text.split("### Answer:")[1].lower():
-    response = "no"
-else:
-    response = "No se pudo determinar una respuesta clara."
-
-print(response)
+# print(output['choices'][0]['text'])
